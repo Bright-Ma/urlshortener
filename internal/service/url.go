@@ -4,129 +4,129 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
-	"github.com/aeilang/urlshortener/config"
-	"github.com/aeilang/urlshortener/internal/cache"
 	"github.com/aeilang/urlshortener/internal/model"
 	"github.com/aeilang/urlshortener/internal/repo"
-	"github.com/aeilang/urlshortener/pkg/shortcode"
 )
 
-type URLService interface {
-	CreateURL(ctx context.Context, params model.CreateURLRequest) (*repo.Url, error)
+type ShortCodeGenerator interface {
+	GenerateShortCode() string
+}
+
+type Cacher interface {
+	SetURL(ctx context.Context, url repo.Url) error
 	GetURL(ctx context.Context, shortCode string) (*repo.Url, error)
-	Cleanup(ctx context.Context) error
 }
 
-type urlService struct {
-	querier   repo.Querier
-	cache     cache.Cache
-	generator shortcode.ShortCodeGenerator
-	db        *sql.DB
-	cfg       *config.Config
+type URLService struct {
+	querier            repo.Querier
+	shortCodeGenerator ShortCodeGenerator
+	defaultDuration    time.Duration
+	cache              Cacher
+	baseURL            string
 }
 
-func NewURLService(db *sql.DB, cache cache.Cache, generator shortcode.ShortCodeGenerator, cfg *config.Config) URLService {
-	s := urlService{
-		querier:   repo.New(db),
-		cache:     cache,
-		generator: generator,
-		db:        db,
-		cfg:       cfg,
+func NewURLService(db *sql.DB, shortCodeGenerator ShortCodeGenerator, duration time.Duration, cache Cacher, baseURL string) *URLService {
+	return &URLService{
+		querier:            repo.New(db),
+		shortCodeGenerator: shortCodeGenerator,
+		defaultDuration:    duration,
+		cache:              cache,
+		baseURL:            baseURL,
 	}
-	return &s
 }
 
-func (s *urlService) CreateURL(ctx context.Context, params model.CreateURLRequest) (*repo.Url, error) {
+func (s *URLService) CreateURL(ctx context.Context, req model.CreateURLRequest) (*model.CreateURLResponse, error) {
 	var shortCode string
 	var isCustom bool
-	var expiresAt time.Time
-	var err error
+	var expiredAt time.Time
 
-	if params.CustomCode != "" {
-		// Check if custom code is available
-		isAvailable, err := s.querier.IsShortCodeAvailable(ctx, params.CustomCode)
+	if req.CustomCode != "" {
+		isAvailabel, err := s.querier.IsShortCodeAvailable(ctx, req.CustomCode)
 		if err != nil {
 			return nil, err
 		}
-		if !isAvailable {
-			return nil, errors.New("custom code is already taken")
+		if !isAvailabel {
+			return nil, fmt.Errorf("别名已存在")
 		}
-		shortCode = params.CustomCode
+		shortCode = req.CustomCode
 		isCustom = true
 	} else {
-		shortCode, err = s.tryFiveIsAvaliable(ctx, 0)
+		code, err := s.getShortCode(ctx, 0)
 		if err != nil {
 			return nil, err
 		}
+		shortCode = code
 	}
 
-	if params.Duration == nil {
-		expiresAt = time.Now().Add(s.cfg.App.DefaultExpiration)
+	if req.Duration == nil {
+		expiredAt = time.Now().Add(s.defaultDuration)
 	} else {
-		expiresAt = time.Now().Add(time.Hour * time.Duration(*params.Duration))
+		expiredAt = time.Now().Add(time.Hour * time.Duration(*req.Duration))
 	}
 
+	// 插入数据库
 	url, err := s.querier.CreateURL(ctx, repo.CreateURLParams{
-		OriginalUrl: params.OriginalURL,
+		OriginalUrl: req.OriginalURL,
 		ShortCode:   shortCode,
-		ExpiresAt:   expiresAt,
 		IsCustom:    isCustom,
+		ExpiredAt:   expiredAt,
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	// Cache the URL
+	// 存入缓存
 	if err := s.cache.SetURL(ctx, url); err != nil {
 		return nil, err
 	}
 
-	return &url, nil
+	return &model.CreateURLResponse{
+		ShortURL:  s.baseURL + "/" + url.ShortCode,
+		ExpiredAt: url.ExpiredAt,
+	}, nil
 }
 
-func (s *urlService) tryFiveIsAvaliable(ctx context.Context, n int) (string, error) {
-	if n >= 5 {
-		return "", errors.New("try 5 times and failed")
-	}
-	shortCode := s.generator.NextID()
-
-	isAvailale, err := s.querier.IsShortCodeAvailable(ctx, shortCode)
+func (s *URLService) GetURL(ctx context.Context, shortCode string) (string, error) {
+	// 先访问cache
+	url, err := s.cache.GetURL(ctx, shortCode)
 	if err != nil {
 		return "", err
 	}
-	if !isAvailale {
-		return s.tryFiveIsAvaliable(ctx, n+1)
-	}
-	return shortCode, nil
-}
-
-func (s *urlService) GetURL(ctx context.Context, shortCode string) (*repo.Url, error) {
-	// Try cache first
-	url, err := s.cache.GetURL(ctx, shortCode)
-	if err != nil {
-		return nil, err
-	}
 	if url != nil {
-		return url, nil
+		return url.OriginalUrl, nil
 	}
 
-	// If not in cache, get from database
-	url2, err := s.querier.GetURLByShortCode(ctx, shortCode)
+	// 访问数据库
+	url2, err := s.querier.GetUrlByShortCode(ctx, shortCode)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	// Cache the result
+	// 存入缓存
 	if err := s.cache.SetURL(ctx, url2); err != nil {
-		return nil, err
+		return "", err
 	}
 
-	return url, nil
+	return url2.OriginalUrl, nil
 }
 
-func (s *urlService) Cleanup(ctx context.Context) error {
-	return s.querier.DeleteExpiredURLs(ctx)
+func (s *URLService) getShortCode(ctx context.Context, n int) (string, error) {
+	if n > 5 {
+		return "", errors.New("重试过多")
+	}
+	shortCode := s.shortCodeGenerator.GenerateShortCode()
+
+	isAvailable, err := s.querier.IsShortCodeAvailable(ctx, shortCode)
+	if err != nil {
+		return "", err
+	}
+
+	if isAvailable {
+		return shortCode, nil
+	}
+
+	return s.getShortCode(ctx, n+1)
 }

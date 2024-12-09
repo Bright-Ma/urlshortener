@@ -10,42 +10,42 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-const (
-	urlKeyPrefix = "url:"
-)
-
-type Cache interface {
-	GetURL(ctx context.Context, shortCode string) (*repo.Url, error)
-	SetURL(ctx context.Context, url repo.Url) error
-	DeleteURL(ctx context.Context, shortCode string) error
-	Close() error
+type RedisCache struct {
+	client        *redis.Client
+	cacheDuration time.Duration
 }
 
-type redisCache struct {
-	client *redis.Client
-}
-
-func NewRedisCache(cfg config.RedisConfig) (Cache, error) {
+func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.Address,
-		DB:       cfg.DB,
 		Password: cfg.Password,
+		DB:       cfg.DB,
 	})
 
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		return nil, err
 	}
 
-	return &redisCache{client: client}, nil
+	return &RedisCache{
+		client:        client,
+		cacheDuration: cfg.CacheDuration,
+	}, nil
 }
 
-func (c *redisCache) Close() error {
-	return c.client.Close()
+func (c *RedisCache) SetURL(ctx context.Context, url repo.Url) error {
+	data, err := json.Marshal(url)
+	if err != nil {
+		return err
+	}
+	if err := c.client.Set(ctx, url.ShortCode, data, c.cacheDuration).Err(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (c *redisCache) GetURL(ctx context.Context, shortCode string) (*repo.Url, error) {
-	key := urlKeyPrefix + shortCode
-	data, err := c.client.Get(ctx, key).Bytes()
+func (c *RedisCache) GetURL(ctx context.Context, shortCode string) (*repo.Url, error) {
+	data, err := c.client.Get(ctx, shortCode).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	}
@@ -58,31 +58,9 @@ func (c *redisCache) GetURL(ctx context.Context, shortCode string) (*repo.Url, e
 		return nil, err
 	}
 
-	// Check if URL has expired
-	if url.ExpiresAt.Before(time.Now()) {
-		c.client.Del(ctx, key)
-		return nil, nil
-	}
-
 	return &url, nil
 }
 
-func (c *redisCache) SetURL(ctx context.Context, url repo.Url) error {
-	key := urlKeyPrefix + url.ShortCode
-
-	data, err := json.Marshal(url)
-	if err != nil {
-		return err
-	}
-
-	if url.ExpiresAt.Before(time.Now()) {
-		return nil
-	}
-
-	return c.client.Set(ctx, key, data, time.Until(url.ExpiresAt)).Err()
-}
-
-func (c *redisCache) DeleteURL(ctx context.Context, shortCode string) error {
-	key := urlKeyPrefix + shortCode
-	return c.client.Del(ctx, key).Err()
+func (c *RedisCache) Close() error {
+	return c.client.Close()
 }

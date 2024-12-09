@@ -14,71 +14,61 @@ const createURL = `-- name: CreateURL :one
 INSERT INTO urls (
     original_url,
     short_code,
-    expires_at,
-    is_custom
+    is_custom,
+    expired_at
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING id, original_url, short_code, created_at, expires_at, is_custom
+) RETURNING id, original_url, short_code, is_custom, expired_at, created_at
 `
 
 type CreateURLParams struct {
 	OriginalUrl string    `json:"original_url"`
 	ShortCode   string    `json:"short_code"`
-	ExpiresAt   time.Time `json:"expires_at"`
 	IsCustom    bool      `json:"is_custom"`
+	ExpiredAt   time.Time `json:"expired_at"`
 }
 
 func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) (Url, error) {
 	row := q.db.QueryRowContext(ctx, createURL,
 		arg.OriginalUrl,
 		arg.ShortCode,
-		arg.ExpiresAt,
 		arg.IsCustom,
+		arg.ExpiredAt,
 	)
 	var i Url
 	err := row.Scan(
 		&i.ID,
 		&i.OriginalUrl,
 		&i.ShortCode,
-		&i.CreatedAt,
-		&i.ExpiresAt,
 		&i.IsCustom,
+		&i.ExpiredAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
-const deleteExpiredURLs = `-- name: DeleteExpiredURLs :exec
-DELETE FROM urls
-WHERE expires_at <= CURRENT_TIMESTAMP
+const getUrlByShortCode = `-- name: GetUrlByShortCode :one
+SELECT id, original_url, short_code, is_custom, expired_at, created_at FROM urls 
+WHERE short_code = $1
+AND expired_at > CURRENT_TIMESTAMP
 `
 
-func (q *Queries) DeleteExpiredURLs(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteExpiredURLs)
-	return err
-}
-
-const getURLByShortCode = `-- name: GetURLByShortCode :one
-SELECT id, original_url, short_code, created_at, expires_at, is_custom FROM urls
-WHERE short_code = $1 AND  expires_at > CURRENT_TIMESTAMP
-LIMIT 1
-`
-
-func (q *Queries) GetURLByShortCode(ctx context.Context, shortCode string) (Url, error) {
-	row := q.db.QueryRowContext(ctx, getURLByShortCode, shortCode)
+func (q *Queries) GetUrlByShortCode(ctx context.Context, shortCode string) (Url, error) {
+	row := q.db.QueryRowContext(ctx, getUrlByShortCode, shortCode)
 	var i Url
 	err := row.Scan(
 		&i.ID,
 		&i.OriginalUrl,
 		&i.ShortCode,
-		&i.CreatedAt,
-		&i.ExpiresAt,
 		&i.IsCustom,
+		&i.ExpiredAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const isShortCodeAvailable = `-- name: IsShortCodeAvailable :one
-SELECT NOT EXISTS (
+SELECT NOT EXISTS(
     SELECT 1 FROM urls
     WHERE short_code = $1
 ) AS is_available

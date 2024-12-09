@@ -2,29 +2,24 @@ package shortcode
 
 import "math/rand"
 
-type ShortCodeGenerator interface {
-	NextID() string
+type ShortCode struct {
+	lenght int
 }
 
-type shortCodeGenerator struct {
-	minLength int
-}
-
-func NewShortCodeGenerator(minLength int) ShortCodeGenerator {
-	return &shortCodeGenerator{
-		minLength: minLength,
+func NewShortCode(length int) *ShortCode {
+	return &ShortCode{
+		lenght: length,
 	}
 }
 
-const chars = "abcdefghijklmnopqrstuvwsyzABCDEFJHIJKLMNOKPRSTUVWSVZ0123456789"
+const chars = "abcdefjhijklmnopqrstuvwsyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-func (s *shortCodeGenerator) NextID() string {
+func (s *ShortCode) GenerateShortCode() string {
 	length := len(chars)
-	id := make([]byte, s.minLength)
+	result := make([]byte, s.lenght)
 
-	for i := 0; i < s.minLength; i++ {
-		id[i] = chars[rand.Intn(length)]
+	for i := 0; i < s.lenght; i++ {
+		result[i] = chars[rand.Intn(length)]
 	}
-
-	return string(id)
+	return string(result)
 }

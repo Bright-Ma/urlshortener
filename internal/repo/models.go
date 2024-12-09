@@ -12,7 +12,7 @@ type Url struct {
 	ID          int64     `json:"id"`
 	OriginalUrl string    `json:"original_url"`
 	ShortCode   string    `json:"short_code"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
 	IsCustom    bool      `json:"is_custom"`
+	ExpiredAt   time.Time `json:"expired_at"`
+	CreatedAt   time.Time `json:"created_at"`
 }

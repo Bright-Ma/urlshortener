@@ -1,12 +1,11 @@
 package main
 
-import "github.com/aeilang/urlshortener/app"
+import "github.com/aeilang/urlshortener/application"
 
 func main() {
-	applcation, err := app.NewApplication()
-	if err != nil {
+	a := application.Application{}
+	if err := a.Init("./config/config.yaml"); err != nil {
 		panic(err)
 	}
-
-	applcation.Run()
+	a.Run()
 }
