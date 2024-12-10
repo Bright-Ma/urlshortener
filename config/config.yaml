@@ -13,7 +13,17 @@ redis:
   address: localhost:6379
   password:
   db: 0
-  cache_duration: 1h
+  url_duration: 1h
+  email_code_duration: 2m
+  sync_view_duration: 2h
+
+email:
+  password:
+  mymail:
+  host_address:
+  host_port:
+  subject:
+  test_mail:
 
 server:
   addr: ":8080"
@@ -30,3 +40,7 @@ shortcode:
 
 logger:
   level: info
+
+jwt:
+  secret: "mycompletedsecret"
+  duration: 24h

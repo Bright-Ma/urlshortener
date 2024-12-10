@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/aeilang/urlshortener/internal/model"
@@ -9,9 +10,13 @@ import (
 )
 
 type URLService interface {
-	CreateURL(ctx context.Context, req model.CreateURLRequest) (*model.CreateURLResponse, error)
+	CreateURL(ctx context.Context, req model.CreateURLRequest) (shortURL string, err error)
 
-	GetURL(ctx context.Context, shortCode string) (string, error)
+	GetURL(ctx context.Context, shortCode string) (originalURL string, err error)
+
+	IncreViews(ctx context.Context, shortCode string) error
+
+	GetURLs(ctx context.Context, req model.GetURLsRequest) ([]model.GetURLsResponse, error)
 }
 
 type URLHandler struct {
@@ -36,10 +41,17 @@ func (h *URLHandler) CreateURL(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
+	userID, _ := c.Get("userID").(int)
+	req.UserID = userID
+
 	// 调用业务函数
-	resp, err := h.urlService.CreateURL(c.Request().Context(), req)
+	shortURL, err := h.urlService.CreateURL(c.Request().Context(), req)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	resp := model.CreateURLResponse{
+		ShortURL: shortURL,
 	}
 
 	// 返回响应
@@ -57,5 +69,38 @@ func (h *URLHandler) RedirectURL(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	// 开辟携程增加view
+	go func() {
+		if err := h.urlService.IncreViews(context.Background(), shortCode); err != nil {
+			log.Printf("failed to incre %s's view ", shortCode)
+		}
+	}()
+
 	return c.Redirect(http.StatusPermanentRedirect, originalURL)
+}
+
+// GET /api/urls
+func (h *URLHandler) GetURLs(c echo.Context) error {
+	userID, _ := c.Get("userID").(int)
+
+	var req model.GetURLsRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if req.Page == 0 {
+		req.Page = 1
+	}
+
+	if req.Size == 0 {
+		req.Size = 10
+	}
+	req.UserID = userID
+
+	resp, err := h.urlService.GetURLs(c.Request().Context(), req)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }

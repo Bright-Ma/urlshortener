@@ -10,15 +10,16 @@ import (
 	"time"
 )
 
-const createURL = `-- name: CreateURL :one
+const createURL = `-- name: CreateURL :exec
 INSERT INTO urls (
     original_url,
     short_code,
     is_custom,
-    expired_at
+    expired_at,
+    user_id
 ) VALUES (
-    $1, $2, $3, $4
-) RETURNING id, original_url, short_code, is_custom, expired_at, created_at
+    $1, $2, $3, $4, $5
+)
 `
 
 type CreateURLParams struct {
@@ -26,43 +27,91 @@ type CreateURLParams struct {
 	ShortCode   string    `json:"short_code"`
 	IsCustom    bool      `json:"is_custom"`
 	ExpiredAt   time.Time `json:"expired_at"`
+	UserID      int32     `json:"user_id"`
 }
 
-func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) (Url, error) {
-	row := q.db.QueryRowContext(ctx, createURL,
+func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) error {
+	_, err := q.db.ExecContext(ctx, createURL,
 		arg.OriginalUrl,
 		arg.ShortCode,
 		arg.IsCustom,
 		arg.ExpiredAt,
+		arg.UserID,
 	)
-	var i Url
-	err := row.Scan(
-		&i.ID,
-		&i.OriginalUrl,
-		&i.ShortCode,
-		&i.IsCustom,
-		&i.ExpiredAt,
-		&i.CreatedAt,
-	)
-	return i, err
+	return err
+}
+
+const getURLsByUserID = `-- name: GetURLsByUserID :many
+SELECT original_url, short_code, views, is_custom, expired_at FROM urls r
+WHERE r.user_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetURLsByUserIDParams struct {
+	UserID int32 `json:"user_id"`
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type GetURLsByUserIDRow struct {
+	OriginalUrl string    `json:"original_url"`
+	ShortCode   string    `json:"short_code"`
+	Views       int32     `json:"views"`
+	IsCustom    bool      `json:"is_custom"`
+	ExpiredAt   time.Time `json:"expired_at"`
+}
+
+func (q *Queries) GetURLsByUserID(ctx context.Context, arg GetURLsByUserIDParams) ([]GetURLsByUserIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, getURLsByUserID, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetURLsByUserIDRow
+	for rows.Next() {
+		var i GetURLsByUserIDRow
+		if err := rows.Scan(
+			&i.OriginalUrl,
+			&i.ShortCode,
+			&i.Views,
+			&i.IsCustom,
+			&i.ExpiredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUrlByShortCode = `-- name: GetUrlByShortCode :one
-SELECT id, original_url, short_code, is_custom, expired_at, created_at FROM urls 
+SELECT original_url, short_code, views, is_custom FROM urls 
 WHERE short_code = $1
 AND expired_at > CURRENT_TIMESTAMP
 `
 
-func (q *Queries) GetUrlByShortCode(ctx context.Context, shortCode string) (Url, error) {
+type GetUrlByShortCodeRow struct {
+	OriginalUrl string `json:"original_url"`
+	ShortCode   string `json:"short_code"`
+	Views       int32  `json:"views"`
+	IsCustom    bool   `json:"is_custom"`
+}
+
+func (q *Queries) GetUrlByShortCode(ctx context.Context, shortCode string) (GetUrlByShortCodeRow, error) {
 	row := q.db.QueryRowContext(ctx, getUrlByShortCode, shortCode)
-	var i Url
+	var i GetUrlByShortCodeRow
 	err := row.Scan(
-		&i.ID,
 		&i.OriginalUrl,
 		&i.ShortCode,
+		&i.Views,
 		&i.IsCustom,
-		&i.ExpiredAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -79,4 +128,20 @@ func (q *Queries) IsShortCodeAvailable(ctx context.Context, shortCode string) (b
 	var is_available bool
 	err := row.Scan(&is_available)
 	return is_available, err
+}
+
+const updateViewsByShortCode = `-- name: UpdateViewsByShortCode :exec
+UPDATE urls
+SET views = views + $1
+WHERE short_code = $2
+`
+
+type UpdateViewsByShortCodeParams struct {
+	Views     int32  `json:"views"`
+	ShortCode string `json:"short_code"`
+}
+
+func (q *Queries) UpdateViewsByShortCode(ctx context.Context, arg UpdateViewsByShortCodeParams) error {
+	_, err := q.db.ExecContext(ctx, updateViewsByShortCode, arg.Views, arg.ShortCode)
+	return err
 }

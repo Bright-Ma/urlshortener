@@ -2,17 +2,19 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/aeilang/urlshortener/config"
-	"github.com/aeilang/urlshortener/internal/repo"
+	"github.com/aeilang/urlshortener/internal/model"
 	"github.com/go-redis/redis/v8"
 )
 
+const urlPrifix = "url:"
+
 type RedisCache struct {
-	client        *redis.Client
-	cacheDuration time.Duration
+	client            *redis.Client
+	urlDuration       time.Duration
+	emailCodeDuration time.Duration
 }
 
 func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
@@ -27,38 +29,24 @@ func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 	}
 
 	return &RedisCache{
-		client:        client,
-		cacheDuration: cfg.CacheDuration,
+		client:            client,
+		urlDuration:       cfg.UrlDuration,
+		emailCodeDuration: cfg.EmailCodeDuration,
 	}, nil
 }
 
-func (c *RedisCache) SetURL(ctx context.Context, url repo.Url) error {
-	data, err := json.Marshal(url)
-	if err != nil {
-		return err
-	}
-	if err := c.client.Set(ctx, url.ShortCode, data, c.cacheDuration).Err(); err != nil {
+func (c *RedisCache) SetURL(ctx context.Context, url model.URL) error {
+	if err := c.client.Set(ctx, urlPrifix+url.ShortCode, url.OriginalURL, c.urlDuration).Err(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *RedisCache) GetURL(ctx context.Context, shortCode string) (*repo.Url, error) {
-	data, err := c.client.Get(ctx, shortCode).Bytes()
-	if err == redis.Nil {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
+func (c *RedisCache) GetURL(ctx context.Context, shortCode string) (originalURL string, err error) {
+	originalURL = c.client.Get(ctx, urlPrifix+shortCode).String()
 
-	var url repo.Url
-	if err := json.Unmarshal(data, &url); err != nil {
-		return nil, err
-	}
-
-	return &url, nil
+	return originalURL, nil
 }
 
 func (c *RedisCache) Close() error {

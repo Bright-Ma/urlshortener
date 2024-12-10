@@ -15,6 +15,8 @@ type Config struct {
 	App       AppConfig       `mapstructure:"app"`
 	ShortCode ShortCodeConfig `mapstructure:"shortcode"`
 	Logger    LogConfig       `mapstructure:"logger"`
+	Email     EmailConfig     `mapstructure:"email"`
+	JWT       JWTConfig       `mapstructure:"jwt"`
 }
 
 var Cfg *Config
@@ -58,11 +60,27 @@ type LogConfig struct {
 	Level string `mapstructure:"level"`
 }
 
+type JWTConfig struct {
+	Secret   string        `mapstructure:"secret"`
+	Duration time.Duration `mapstructure:"duration"`
+}
+
 type RedisConfig struct {
-	Address       string        `mapstructure:"address"`
-	Password      string        `mapstructure:"password"`
-	DB            int           `mapstructure:"db"`
-	CacheDuration time.Duration `mapstructure:"cache_duration"`
+	Address           string        `mapstructure:"address"`
+	Password          string        `mapstructure:"password"`
+	DB                int           `mapstructure:"db"`
+	UrlDuration       time.Duration `mapstructure:"url_duration"`
+	EmailCodeDuration time.Duration `mapstructure:"email_code_duration"`
+	SyncViewDuration  time.Duration `mapstructure:"sync_view_duration"`
+}
+
+type EmailConfig struct {
+	Password    string `mapstructure:"password"`
+	MyMail      string `mapstructure:"mymail"`
+	HostAddress string `mapstructure:"host_address"`
+	HostPort    string `mapstructure:"host_port"`
+	Subject     string `mapstructure:"subject"`
+	TestMail    string `mapstructure:"test_mail"`
 }
 
 type ServerConfig struct {

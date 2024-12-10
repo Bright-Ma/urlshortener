@@ -9,9 +9,15 @@ import (
 )
 
 type Querier interface {
-	CreateURL(ctx context.Context, arg CreateURLParams) (Url, error)
-	GetUrlByShortCode(ctx context.Context, shortCode string) (Url, error)
+	CreateURL(ctx context.Context, arg CreateURLParams) error
+	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	GetURLsByUserID(ctx context.Context, arg GetURLsByUserIDParams) ([]GetURLsByUserIDRow, error)
+	GetUrlByShortCode(ctx context.Context, shortCode string) (GetUrlByShortCodeRow, error)
+	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
+	IsEmailAvaliable(ctx context.Context, email string) (bool, error)
 	IsShortCodeAvailable(ctx context.Context, shortCode string) (bool, error)
+	UpdatePasswordByEmail(ctx context.Context, arg UpdatePasswordByEmailParams) (UpdatePasswordByEmailRow, error)
+	UpdateViewsByShortCode(ctx context.Context, arg UpdateViewsByShortCodeParams) error
 }
 
 var _ Querier = (*Queries)(nil)
