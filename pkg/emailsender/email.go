@@ -18,8 +18,8 @@ type EmailSend struct {
 func NewEmailSend(cfg config.EmailConfig) (*EmailSend, error) {
 	emailSend := &EmailSend{
 		addr:    fmt.Sprintf("%s:%s", cfg.HostAddress, cfg.HostPort),
-		auth:    smtp.PlainAuth("", cfg.MyMail, cfg.Password, cfg.HostAddress),
-		myMail:  cfg.MyMail,
+		auth:    smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.HostAddress),
+		myMail:  cfg.Username,
 		subject: cfg.Subject,
 	}
 	if err := emailSend.Send(cfg.TestMail, "test email"); err != nil {

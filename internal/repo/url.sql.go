@@ -41,8 +41,19 @@ func (q *Queries) CreateURL(ctx context.Context, arg CreateURLParams) error {
 	return err
 }
 
+const deleteURLByShortCode = `-- name: DeleteURLByShortCode :exec
+DELETE FROM urls
+WHERE short_code = $1
+`
+
+func (q *Queries) DeleteURLByShortCode(ctx context.Context, shortCode string) error {
+	_, err := q.db.ExecContext(ctx, deleteURLByShortCode, shortCode)
+	return err
+}
+
 const getURLsByUserID = `-- name: GetURLsByUserID :many
-SELECT original_url, short_code, views, is_custom, expired_at FROM urls r
+SELECT id, original_url, short_code, views, is_custom, expired_at, COUNT(*) OVER() AS total
+FROM urls r
 WHERE r.user_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -55,11 +66,13 @@ type GetURLsByUserIDParams struct {
 }
 
 type GetURLsByUserIDRow struct {
+	ID          int64     `json:"id"`
 	OriginalUrl string    `json:"original_url"`
 	ShortCode   string    `json:"short_code"`
 	Views       int32     `json:"views"`
 	IsCustom    bool      `json:"is_custom"`
 	ExpiredAt   time.Time `json:"expired_at"`
+	Total       int64     `json:"total"`
 }
 
 func (q *Queries) GetURLsByUserID(ctx context.Context, arg GetURLsByUserIDParams) ([]GetURLsByUserIDRow, error) {
@@ -72,11 +85,13 @@ func (q *Queries) GetURLsByUserID(ctx context.Context, arg GetURLsByUserIDParams
 	for rows.Next() {
 		var i GetURLsByUserIDRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.OriginalUrl,
 			&i.ShortCode,
 			&i.Views,
 			&i.IsCustom,
 			&i.ExpiredAt,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}
@@ -128,6 +143,22 @@ func (q *Queries) IsShortCodeAvailable(ctx context.Context, shortCode string) (b
 	var is_available bool
 	err := row.Scan(&is_available)
 	return is_available, err
+}
+
+const updateURLExpiredByShortCode = `-- name: UpdateURLExpiredByShortCode :exec
+UPDATE urls
+SET expired_at = $1
+WHERE short_code = $2
+`
+
+type UpdateURLExpiredByShortCodeParams struct {
+	ExpiredAt time.Time `json:"expired_at"`
+	ShortCode string    `json:"short_code"`
+}
+
+func (q *Queries) UpdateURLExpiredByShortCode(ctx context.Context, arg UpdateURLExpiredByShortCodeParams) error {
+	_, err := q.db.ExecContext(ctx, updateURLExpiredByShortCode, arg.ExpiredAt, arg.ShortCode)
+	return err
 }
 
 const updateViewsByShortCode = `-- name: UpdateViewsByShortCode :exec

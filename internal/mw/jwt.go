@@ -11,7 +11,7 @@ import (
 func JWTAuther(jwt *jwt.JWT) func(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			authHeader := c.Request().Header.Get("Authentication")
+			authHeader := c.Request().Header.Get("Authorization")
 			ls := strings.Split(authHeader, " ")
 			if len(ls) != 2 {
 				return echo.NewHTTPError(http.StatusUnauthorized)

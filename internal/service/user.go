@@ -12,7 +12,7 @@ import (
 
 type PasswordHasher interface {
 	HashPassword(password string) (string, error)
-	ComparePassword(passsword, hash string) bool
+	ComparePassword(hashedPassword string, password string) bool
 }
 
 type UserCacher interface {
@@ -58,7 +58,7 @@ func (s *UserService) Login(ctx context.Context, req model.LoginRequest) (*model
 		return nil, fmt.Errorf("failed to get user by email: %v", err)
 	}
 
-	if !s.passwordHasher.ComparePassword(req.Password, user.PasswordHash) {
+	if !s.passwordHasher.ComparePassword(user.PasswordHash, req.Password) {
 		return nil, model.ErrUserNameOrPasswordFailed
 	}
 
@@ -69,8 +69,8 @@ func (s *UserService) Login(ctx context.Context, req model.LoginRequest) (*model
 
 	return &model.LoginResponse{
 		AccessToken: accessToken,
-		Username:    user.Username,
 		Email:       user.Email,
+		UserID:      int(user.ID),
 	}, nil
 }
 
@@ -105,7 +105,6 @@ func (s *UserService) Register(ctx context.Context, req model.RegisterReqeust) (
 
 	// 插入数据库
 	row, err := s.querier.CreateUser(ctx, repo.CreateUserParams{
-		Username:     req.Username,
 		PasswordHash: hash,
 		Email:        req.Email,
 	})
@@ -121,8 +120,8 @@ func (s *UserService) Register(ctx context.Context, req model.RegisterReqeust) (
 
 	return &model.LoginResponse{
 		AccessToken: accessToken,
-		Username:    req.Username,
 		Email:       req.Email,
+		UserID:      int(row.ID),
 	}, nil
 }
 
@@ -172,6 +171,6 @@ func (s *UserService) ResetPassword(ctx context.Context, req model.ForgetPasswor
 	return &model.LoginResponse{
 		AccessToken: accessToken,
 		Email:       user.Email,
-		Username:    user.Username,
+		UserID:      int(user.ID),
 	}, nil
 }

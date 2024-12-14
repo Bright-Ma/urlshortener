@@ -27,7 +27,17 @@ SET views = views + $1
 WHERE short_code = $2;
 
 -- name: GetURLsByUserID :many
-SELECT original_url, short_code, views, is_custom, expired_at FROM urls r
+SELECT id, original_url, short_code, views, is_custom, expired_at, COUNT(*) OVER() AS total
+FROM urls r
 WHERE r.user_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- name: DeleteURLByShortCode :exec
+DELETE FROM urls
+WHERE short_code = $1;
+
+-- name: UpdateURLExpiredByShortCode :exec
+UPDATE urls
+SET expired_at = $1
+WHERE short_code = $2;

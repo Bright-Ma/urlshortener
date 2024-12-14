@@ -5,7 +5,7 @@ import "context"
 const emailPrifix = "email:"
 
 func (r *RedisCache) GetEmailCode(ctx context.Context, email string) (string, error) {
-	emailCode := r.client.Get(ctx, emailPrifix+email).String()
+	emailCode := r.client.Get(ctx, emailPrifix+email).Val()
 	return emailCode, nil
 }
 

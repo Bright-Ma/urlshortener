@@ -12,16 +12,14 @@ import (
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
-    username,
     email,
     password_hash
 ) VALUES (
-    $1, $2, $3
+    $1, $2
 ) RETURNING id,email
 `
 
 type CreateUserParams struct {
-	Username     string `json:"username"`
 	Email        string `json:"email"`
 	PasswordHash string `json:"password_hash"`
 }
@@ -32,21 +30,20 @@ type CreateUserRow struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Username, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRowContext(ctx, createUser, arg.Email, arg.PasswordHash)
 	var i CreateUserRow
 	err := row.Scan(&i.ID, &i.Email)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, password_hash, email
+SELECT id, password_hash, email
 FROM users
 WHERE email = $1
 `
 
 type GetUserByEmailRow struct {
 	ID           int32  `json:"id"`
-	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
 	Email        string `json:"email"`
 }
@@ -54,12 +51,7 @@ type GetUserByEmailRow struct {
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
 	var i GetUserByEmailRow
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.PasswordHash,
-		&i.Email,
-	)
+	err := row.Scan(&i.ID, &i.PasswordHash, &i.Email)
 	return i, err
 }
 
@@ -81,7 +73,7 @@ const updatePasswordByEmail = `-- name: UpdatePasswordByEmail :one
 UPDATE users
 SET password_hash = $1, updated_at = $2
 WHERE email = $3
-RETURNING id, username, email
+RETURNING id, email
 `
 
 type UpdatePasswordByEmailParams struct {
@@ -91,14 +83,13 @@ type UpdatePasswordByEmailParams struct {
 }
 
 type UpdatePasswordByEmailRow struct {
-	ID       int32  `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID    int32  `json:"id"`
+	Email string `json:"email"`
 }
 
 func (q *Queries) UpdatePasswordByEmail(ctx context.Context, arg UpdatePasswordByEmailParams) (UpdatePasswordByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, updatePasswordByEmail, arg.PasswordHash, arg.UpdatedAt, arg.Email)
 	var i UpdatePasswordByEmailRow
-	err := row.Scan(&i.ID, &i.Username, &i.Email)
+	err := row.Scan(&i.ID, &i.Email)
 	return i, err
 }

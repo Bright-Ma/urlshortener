@@ -15,15 +15,17 @@ redis:
   db: 0
   url_duration: 1h
   email_code_duration: 2m
-  sync_view_duration: 2h
+
+rand_num:
+  length: 6
 
 email:
-  password:
-  mymail:
-  host_address:
-  host_port:
-  subject:
-  test_mail:
+  password: lqiPivBJPLnukHpy
+  username: MS_VyrzQl@trial-o65qngkw5owgwr12.mlsender.net
+  host_address: smtp.mailersend.net
+  host_port: 587
+  subject: "This is my test mail"
+  test_mail: "jingyifsy@gmail.com"
 
 server:
   addr: ":8080"
@@ -33,7 +35,7 @@ server:
 app:
   base_url: "http://localhost:8080"
   default_duration: 10h
-  cleanup_interval: 2h
+  sync_view_duration: 2h
 
 shortcode:
   length: 6

@@ -3,7 +3,6 @@ CREATE EXTENSION IF NOT EXISTS citext;
 
 CREATE TABLE IF NOT EXISTS users (
     "id" SERIAL PRIMARY KEY,
-    "username" TEXT NOT NULL,
     "email" CITEXT NOT NULL UNIQUE, -- 比较时忽略大小写
     "password_hash" TEXT NOT NULL, 
     "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -19,7 +19,8 @@ type GetURLsRequest struct {
 	UserID int  `query:"-"`
 }
 
-type GetURLsResponse struct {
+type FullURL struct {
+	ID          int       `json:"id"`
 	OriginalURL string    `json:"original_url"`
 	ShortURL    string    `json:"short_url"`
 	ExpiredAt   time.Time `json:"expired_at"`
@@ -27,7 +28,21 @@ type GetURLsResponse struct {
 	Views       uint      `json:"views"`
 }
 
+type GetURLsResponse struct {
+	Items []FullURL `json:"items"`
+	Total int       `json:"total"`
+}
+
 type URL struct {
 	OriginalURL string
 	ShortCode   string
+}
+
+type DeleteURLRequest struct {
+	Code string `param:"code" validate:"required,len=6,alphanum"`
+}
+
+type UpdateURLDurationReq struct {
+	Code      string    `param:"code" validate:"required,len=6,alphanum"`
+	ExpiredAt time.Time `json:"expired_at" validate:"required,after"`
 }

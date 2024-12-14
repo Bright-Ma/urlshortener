@@ -1,14 +1,18 @@
 package shortcode
 
-import "math/rand"
+import (
+	"math/rand"
+
+	"github.com/aeilang/urlshortener/config"
+)
 
 type ShortCode struct {
 	lenght int
 }
 
-func NewShortCode(length int) *ShortCode {
+func NewShortCode(cfg config.ShortCodeConfig) *ShortCode {
 	return &ShortCode{
-		lenght: length,
+		lenght: cfg.Length,
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aeilang/urlshortener/config"
 	"github.com/aeilang/urlshortener/internal/model"
 	"github.com/aeilang/urlshortener/internal/repo"
 )
@@ -16,30 +17,31 @@ type ShortCodeGenerator interface {
 	GenerateShortCode() string
 }
 
-type Cacher interface {
+type URLCacher interface {
 	SetURL(ctx context.Context, url model.URL) error
 	GetURL(ctx context.Context, shortCode string) (string, error)
+	DelURL(ctx context.Context, shortCode string) error
 	IncreViews(ctx context.Context, shortCode string) error
 	ScanViews(ctx context.Context, cursor uint64, batchSize int64) (keys []string, nextCursor uint64, err error)
 	GetViews(ctx context.Context, shortCode string) (int, error)
-	DelViews(ctx context.Context, key string) error
+	DelViews(ctx context.Context, shortCode string) error
 }
 
 type URLService struct {
 	querier            repo.Querier
 	shortCodeGenerator ShortCodeGenerator
-	defaultDuration    time.Duration
-	cache              Cacher
+	cache              URLCacher
+	urlDefaultDuration time.Duration
 	baseURL            string
 }
 
-func NewURLService(db *sql.DB, shortCodeGenerator ShortCodeGenerator, duration time.Duration, cache Cacher, baseURL string) *URLService {
+func NewURLService(db *sql.DB, shortCodeGenerator ShortCodeGenerator, cache URLCacher, cfg config.AppConfig) *URLService {
 	return &URLService{
 		querier:            repo.New(db),
 		shortCodeGenerator: shortCodeGenerator,
-		defaultDuration:    duration,
 		cache:              cache,
-		baseURL:            baseURL,
+		urlDefaultDuration: cfg.DefaultDuration,
+		baseURL:            cfg.BaseURL,
 	}
 }
 
@@ -67,7 +69,7 @@ func (s *URLService) CreateURL(ctx context.Context, req model.CreateURLRequest) 
 	}
 
 	if req.Duration == nil {
-		expiredAt = time.Now().Add(s.defaultDuration)
+		expiredAt = time.Now().Add(s.urlDefaultDuration)
 	} else {
 		expiredAt = time.Now().Add(time.Hour * time.Duration(*req.Duration))
 	}
@@ -145,7 +147,7 @@ func (s *URLService) getShortCode(ctx context.Context, n int) (string, error) {
 	return s.getShortCode(ctx, n+1)
 }
 
-func (s *URLService) GetURLs(ctx context.Context, req model.GetURLsRequest) ([]model.GetURLsResponse, error) {
+func (s *URLService) GetURLs(ctx context.Context, req model.GetURLsRequest) (*model.GetURLsResponse, error) {
 	rows, err := s.querier.GetURLsByUserID(ctx, repo.GetURLsByUserIDParams{
 		UserID: int32(req.UserID),
 		Limit:  int32(req.Size),
@@ -155,7 +157,8 @@ func (s *URLService) GetURLs(ctx context.Context, req model.GetURLsRequest) ([]m
 		return nil, err
 	}
 
-	resp := make([]model.GetURLsResponse, len(rows))
+	items := make([]model.FullURL, len(rows))
+	total := 0
 
 	for i := range rows {
 		row := &rows[i]
@@ -164,22 +167,48 @@ func (s *URLService) GetURLs(ctx context.Context, req model.GetURLsRequest) ([]m
 			return nil, err
 		}
 
-		if views == 0 {
-			continue
-		}
-
 		row.Views += int32(views)
 
-		resp[i] = model.GetURLsResponse{
+		items[i] = model.FullURL{
 			OriginalURL: row.OriginalUrl,
-			ShortURL:    s.baseURL + row.ShortCode,
+			ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, row.ShortCode),
 			ExpiredAt:   row.ExpiredAt,
 			IsCustom:    row.IsCustom,
 			Views:       uint(row.Views),
+			ID:          int(row.ID),
 		}
+		total = int(row.Total)
 	}
 
-	return resp, nil
+	resp := model.GetURLsResponse{
+		Items: items,
+		Total: total,
+	}
+
+	return &resp, nil
+}
+
+func (s *URLService) DeleteURL(ctx context.Context, code string) error {
+	if err := s.querier.DeleteURLByShortCode(ctx, code); err != nil {
+		return err
+	}
+
+	if err := s.cache.DelURL(ctx, code); err != nil {
+		return err
+	}
+
+	if err := s.cache.DelViews(ctx, code); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *URLService) UpdateURLDuration(ctx context.Context, req model.UpdateURLDurationReq) error {
+	return s.querier.UpdateURLExpiredByShortCode(ctx, repo.UpdateURLExpiredByShortCodeParams{
+		ExpiredAt: req.ExpiredAt,
+		ShortCode: req.Code,
+	})
 }
 
 func (s *URLService) IncreViews(ctx context.Context, shortCode string) error {

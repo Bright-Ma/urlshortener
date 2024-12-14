@@ -44,9 +44,13 @@ func (c *RedisCache) SetURL(ctx context.Context, url model.URL) error {
 }
 
 func (c *RedisCache) GetURL(ctx context.Context, shortCode string) (originalURL string, err error) {
-	originalURL = c.client.Get(ctx, urlPrifix+shortCode).String()
+	originalURL = c.client.Get(ctx, urlPrifix+shortCode).Val()
 
 	return originalURL, nil
+}
+
+func (c *RedisCache) DelURL(ctx context.Context, shortCode string) error {
+	return c.client.Del(ctx, urlPrifix+shortCode).Err()
 }
 
 func (c *RedisCache) Close() error {

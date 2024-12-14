@@ -3,8 +3,6 @@ package application
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,111 +12,107 @@ import (
 	"github.com/aeilang/urlshortener/database"
 	"github.com/aeilang/urlshortener/internal/api"
 	"github.com/aeilang/urlshortener/internal/cache"
-	"github.com/aeilang/urlshortener/internal/mw"
 	"github.com/aeilang/urlshortener/internal/service"
 	"github.com/aeilang/urlshortener/pkg/emailsender"
 	"github.com/aeilang/urlshortener/pkg/hasher"
 	"github.com/aeilang/urlshortener/pkg/jwt"
 	"github.com/aeilang/urlshortener/pkg/logger"
+	"github.com/aeilang/urlshortener/pkg/randnum"
 	"github.com/aeilang/urlshortener/pkg/shortcode"
 	"github.com/aeilang/urlshortener/pkg/validator"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 type Application struct {
-	e                  *echo.Echo
-	db                 *sql.DB
-	redisClient        *cache.RedisCache
-	passwordHash       *hasher.PasswordHash
-	emailSender        *emailsender.EmailSend
-	urlService         *service.URLService
-	userService        *service.UserService
-	urlHandler         *api.URLHandler
-	userHandler        *api.URLHandler
-	cfg                *config.Config
-	shortCodeGenerator *shortcode.ShortCode
-	jwt                *jwt.JWT
+	e           *echo.Echo
+	db          *sql.DB
+	redisClient *cache.RedisCache
+	urlService  *service.URLService
+	urlHandler  *api.URLHandler
+	userHandler *api.UserHandler
+	cfg         *config.Config
+	jwt         *jwt.JWT
 }
 
-func (a *Application) Init(filePath string) error {
-	cfg, err := config.LoadConfig(filePath)
+func InitApp(filePath string) (*Application, error) {
+	// 加载配置
+	cfg, err := config.NewConfig(filePath)
 	if err != nil {
-		return fmt.Errorf("加载配置错误: %w", err)
+		return nil, err
 	}
-	a.cfg = cfg
 
+	// 初始化logger
 	logger.InitLogger(cfg.Logger)
 
-	a.passwordHash = hasher.NewPasswordHash()
-	a.jwt = jwt.NewJWT(cfg.JWT)
-	a.emailSender, err = emailsender.NewEmailSend(cfg.Email)
-	if err != nil {
-		return fmt.Errorf("failed to new EmailSender: %v", err)
-	}
-
+	// 初始化数据库
 	db, err := database.NewDB(cfg.Database)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	a.db = db
 
+	// 初始化redis
 	redisClient, err := cache.NewRedisCache(cfg.Redis)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	a.redisClient = redisClient
-	a.shortCodeGenerator = shortcode.NewShortCode(cfg.ShortCode.Length)
 
-	a.urlService = service.NewURLService(db, a.shortCodeGenerator, cfg.App.DefaultDuration, redisClient, cfg.App.BaseURL)
-	a.urlHandler = api.NewURLHandler(a.urlService)
-	a.userService = service.NewUserService(db, a.passwordHash, a.jwt, redisClient)
+	// 初始化pkg
+	emailSender, err := emailsender.NewEmailSend(cfg.Email)
+	if err != nil {
+		return nil, err
+	}
 
-	a.initEcho()
+	passwordHash := hasher.NewPasswordHash()
+
+	jwt := jwt.NewJWT(cfg.JWT)
+
+	randNum := randnum.NewRandNum(cfg.RandNum)
+
+	shortCode := shortcode.NewShortCode(cfg.ShortCode)
+
+	customValidator := validator.NewCustomValidator()
+
+	// service
+	urlService := service.NewURLService(db, shortCode, redisClient, cfg.App)
+	userService := service.NewUserService(db, passwordHash, jwt, redisClient, emailSender, randNum)
+
+	// handler
+	urlHandler := api.NewURLHandler(urlService)
+	userHandler := api.NewUserHandler(userService)
+
+	// echo
+	e := NewEcho(cfg.Server, customValidator)
+
+	a := &Application{
+		e:           e,
+		db:          db,
+		redisClient: redisClient,
+		urlService:  urlService,
+		urlHandler:  urlHandler,
+		userHandler: userHandler,
+		cfg:         cfg,
+		jwt:         jwt,
+	}
 
 	a.initRouter()
-	return nil
+	return a, nil
 }
 
-func (a *Application) initEcho() {
-	e := echo.New()
+func (a *Application) Start() {
+	go a.syncViewsToDB()
 
-	e.HideBanner = true
-	e.HidePort = true
-	e.Server.WriteTimeout = a.cfg.Server.WriteTimeout
-	e.Server.ReadTimeout = a.cfg.Server.ReadTimeout
+	go func() {
+		if err := a.e.Start(a.cfg.Server.Addr); err != nil {
+			logger.Fatal(err.Error())
+		}
+	}()
 
-	a.e.Validator = validator.NewCustomValidator()
-
-	e.Use(mw.Logger)
-	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
-
-	a.e = e
-}
-
-func (a *Application) initRouter() {
-	// Pubily
-	a.e.GET("/:code", a.urlHandler.RedirectURL)
-
-	// auth required
-	a.e.POST("/api/url", a.urlHandler.CreateURL)
-}
-
-func (a *Application) Run() {
-	go a.startServer()
-	go a.SyncViewsToDB()
+	// wait to gracefully shutdown
 	a.shutdown()
 }
 
-func (a *Application) startServer() {
-	if err := a.e.Start(a.cfg.Server.Addr); err != nil {
-		log.Println(err)
-	}
-}
-
-func (a *Application) SyncViewsToDB() {
-	ticker := time.NewTicker(a.cfg.Redis.SyncViewDuration)
+func (a *Application) syncViewsToDB() {
+	ticker := time.NewTicker(a.cfg.App.SyncViewDuration)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -127,33 +121,34 @@ func (a *Application) SyncViewsToDB() {
 			defer cancel()
 
 			if err := a.urlService.SyncViewsToDB(ctx); err != nil {
-				log.Printf("sync db failed: %v", err)
+				logger.Error(err.Error())
 			}
 		}()
 	}
+
 }
 
+// gracefully shutdown
 func (a *Application) shutdown() {
+	defer func() {
+		if err := a.db.Close(); err != nil {
+			logger.Error(err.Error())
+		}
+	}()
+	defer func() {
+		if err := a.db.Close(); err != nil {
+			logger.Error(err.Error())
+		}
+	}()
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-
-	defer func() {
-		if err := a.db.Close(); err != nil {
-			log.Println(err)
-		}
-	}()
-
-	defer func() {
-		if err := a.redisClient.Close(); err != nil {
-			log.Println(err)
-		}
-	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := a.e.Shutdown(ctx); err != nil {
-		log.Println(err)
+		logger.Error(err.Error())
 	}
 }
