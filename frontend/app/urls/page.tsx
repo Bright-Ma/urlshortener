@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -50,28 +50,31 @@ export default function MyUrls() {
   const pageSize = 10;
   const { token } = useAuth();
 
-  const fetchUrls = async (page: number) => {
-    try {
-      const response = await fetch(
-        `${base_url}/api/urls?page=${page}&size=${pageSize}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+  const fetchUrls = useCallback(
+    async (page: number) => {
+      try {
+        const response = await fetch(
+          `${base_url}/api/urls?page=${page}&size=${pageSize}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
-      const data = await response.json();
-      setUrls(data.items || []);
-      setTotalPages(Math.ceil((data.total || 0) / pageSize));
-    } catch (error) {
-      console.error("Failed to fetch URLs:", error);
-    }
-  };
+        const data = await response.json();
+        setUrls(data.items || []);
+        setTotalPages(Math.ceil((data.total || 0) / pageSize));
+      } catch (error) {
+        console.error("Failed to fetch URLs:", error);
+      }
+    },
+    [token, pageSize]
+  );
 
   const handleDelete = async (shortUrl: string) => {
-    const code = shortUrl.split('/').pop();
+    const code = shortUrl.split("/").pop();
     try {
       const response = await fetch(`${base_url}/api/url/${code}`, {
         method: "DELETE",
@@ -93,7 +96,7 @@ export default function MyUrls() {
   };
 
   const handleUpdate = async (shortUrl: string, newExpiredAt: string) => {
-    const code = shortUrl.split('/').pop();
+    const code = shortUrl.split("/").pop();
     try {
       const response = await fetch(`${base_url}/api/url/${code}`, {
         method: "PATCH",
@@ -121,7 +124,7 @@ export default function MyUrls() {
 
   useEffect(() => {
     fetchUrls(currentPage);
-  }, [currentPage]);
+  }, [currentPage, fetchUrls]);
 
   return (
     <div className="container mx-auto py-10">
@@ -143,32 +146,39 @@ export default function MyUrls() {
               <TableRow key={url.id}>
                 <TableCell>{url.id}</TableCell>
                 <TableCell className="truncate text-sky-500">
-                  <Link href={url.short_url} target="_blank">{url.short_url}</Link>
+                  <Link href={url.short_url} target="_blank">
+                    {url.short_url}
+                  </Link>
                 </TableCell>
                 <TableCell className="max-w-[200px] truncate text-sky-500">
-                  <Link href={url.original_url} target="_blank">{url.original_url}</Link>
+                  <Link href={url.original_url} target="_blank">
+                    {url.original_url}
+                  </Link>
                 </TableCell>
                 <TableCell>{url.views}</TableCell>
                 <TableCell>
-                  {new Date(url.expired_at).toLocaleString('zh-CN', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false
+                  {new Date(url.expired_at).toLocaleString("zh-CN", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false,
                   })}
                 </TableCell>
                 <TableCell>
                   <div className="flex space-x-2">
-                    <Dialog open={isUpdateDialogOpen && selectedUrl?.id === url.id} onOpenChange={(open) => {
-                      setIsUpdateDialogOpen(open);
-                      if (!open) {
-                        setSelectedUrl(null);
-                        setNewExpiryDate("");
-                      }
-                    }}>
+                    <Dialog
+                      open={isUpdateDialogOpen && selectedUrl?.id === url.id}
+                      onOpenChange={(open) => {
+                        setIsUpdateDialogOpen(open);
+                        if (!open) {
+                          setSelectedUrl(null);
+                          setNewExpiryDate("");
+                        }
+                      }}
+                    >
                       <DialogTrigger asChild>
                         <Button
                           variant="outline"
@@ -177,11 +187,22 @@ export default function MyUrls() {
                             setSelectedUrl(url);
                             const date = new Date(url.expired_at);
                             const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, '0');
-                            const day = String(date.getDate()).padStart(2, '0');
-                            const hours = String(date.getHours()).padStart(2, '0');
-                            const minutes = String(date.getMinutes()).padStart(2, '0');
-                            setNewExpiryDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+                            const month = String(date.getMonth() + 1).padStart(
+                              2,
+                              "0"
+                            );
+                            const day = String(date.getDate()).padStart(2, "0");
+                            const hours = String(date.getHours()).padStart(
+                              2,
+                              "0"
+                            );
+                            const minutes = String(date.getMinutes()).padStart(
+                              2,
+                              "0"
+                            );
+                            setNewExpiryDate(
+                              `${year}-${month}-${day}T${hours}:${minutes}`
+                            );
                           }}
                         >
                           更新
@@ -198,7 +219,9 @@ export default function MyUrls() {
                             onChange={(e) => setNewExpiryDate(e.target.value)}
                           />
                           <Button
-                            onClick={() => handleUpdate(url.short_url, newExpiryDate)}
+                            onClick={() =>
+                              handleUpdate(url.short_url, newExpiryDate)
+                            }
                           >
                             确认
                           </Button>
@@ -227,7 +250,7 @@ export default function MyUrls() {
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               />
             </PaginationItem>
-            
+
             {/* First page */}
             {totalPages > 0 && (
               <PaginationItem>
@@ -249,7 +272,7 @@ export default function MyUrls() {
 
             {/* Middle pages */}
             {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(page => {
+              .filter((page) => {
                 if (totalPages <= 7) return true;
                 if (page === 1 || page === totalPages) return false;
                 return Math.abs(currentPage - page) <= 1;
