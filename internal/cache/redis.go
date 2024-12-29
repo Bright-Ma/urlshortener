@@ -9,7 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-const urlPrifix = "url:"
+const urlPrefix = "url:"
 
 type RedisCache struct {
 	client            *redis.Client
@@ -36,7 +36,7 @@ func NewRedisCache(cfg config.RedisConfig) (*RedisCache, error) {
 }
 
 func (c *RedisCache) SetURL(ctx context.Context, url model.URL) error {
-	if err := c.client.Set(ctx, urlPrifix+url.ShortCode, url.OriginalURL, c.urlDuration).Err(); err != nil {
+	if err := c.client.Set(ctx, urlPrefix+url.ShortCode, url.OriginalURL, c.urlDuration).Err(); err != nil {
 		return err
 	}
 
@@ -44,13 +44,13 @@ func (c *RedisCache) SetURL(ctx context.Context, url model.URL) error {
 }
 
 func (c *RedisCache) GetURL(ctx context.Context, shortCode string) (originalURL string, err error) {
-	originalURL = c.client.Get(ctx, urlPrifix+shortCode).Val()
+	originalURL = c.client.Get(ctx, urlPrefix+shortCode).Val()
 
 	return originalURL, nil
 }
 
 func (c *RedisCache) DelURL(ctx context.Context, shortCode string) error {
-	return c.client.Del(ctx, urlPrifix+shortCode).Err()
+	return c.client.Del(ctx, urlPrefix+shortCode).Err()
 }
 
 func (c *RedisCache) Close() error {
